@@ -1156,5 +1156,16 @@
   "1155": "Not implemented",
   "1156": "Cannot create a replay stream after the ReplayableNodeStream has been disposed.",
   "1157": "`unstable_io()` requires the `experimental.unstableIO` option to be enabled in your Next.js config.",
-  "1158": "The prerender-ppr work unit type has been removed. This code path should be unreachable."
+  "1158": "The prerender-ppr work unit type has been removed. This code path should be unreachable.",
+  "1159": "Worker pool is ending, no more calls can be made",
+  "1160": "Worker exited with code %s%s",
+  "1161": "This file must be run as a worker thread",
+  "1162": "Worker pool closed",
+  "1163": "Child can only be used on a forked process",
+  "1164": "Error when calling setup: %s",
+  "1165": "Worker pool ended before task could be processed",
+  "1166": "\"null\" or \"undefined\" thrown",
+  "1167": "Unexpected request from parent process: %s",
+  "1168": "Worker exited unexpectedly with code %s, signal %s",
+  "1169": "Worker restarted due to timeout"
 }
