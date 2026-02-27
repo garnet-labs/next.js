@@ -82,6 +82,7 @@
                     ModuleValue {
                         module: "path",
                         annotations: None,
+                        analyze_for_constants: false,
                     },
                 ),
                 Constant(
@@ -109,6 +110,7 @@
                 ModuleValue {
                     module: "path",
                     annotations: None,
+                    analyze_for_constants: false,
                 },
             ),
             Constant(

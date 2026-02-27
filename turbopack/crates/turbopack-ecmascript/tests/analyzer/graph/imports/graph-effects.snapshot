@@ -5,12 +5,8 @@
             Module(
                 ModuleValue {
                     module: "x1",
-                    annotations: ImportAnnotations {
-                        map: {},
-                        turbopack_loader: None,
-                        turbopack_rename_as: None,
-                        turbopack_module_type: None,
-                    },
+                    annotations: None,
+                    analyze_for_constants: false,
                 },
             ),
             Constant(
@@ -63,12 +59,8 @@
             Module(
                 ModuleValue {
                     module: "x2",
-                    annotations: ImportAnnotations {
-                        map: {},
-                        turbopack_loader: None,
-                        turbopack_rename_as: None,
-                        turbopack_module_type: None,
-                    },
+                    annotations: None,
+                    analyze_for_constants: false,
                 },
             ),
             Constant(
@@ -119,12 +111,8 @@
         value: Module(
             ModuleValue {
                 module: "x3",
-                annotations: ImportAnnotations {
-                    map: {},
-                    turbopack_loader: None,
-                    turbopack_rename_as: None,
-                    turbopack_module_type: None,
-                },
+                annotations: None,
+                analyze_for_constants: false,
             },
         ),
         esm_reference_index: 6,

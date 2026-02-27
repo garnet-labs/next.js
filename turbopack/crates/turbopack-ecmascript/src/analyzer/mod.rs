@@ -9,7 +9,6 @@ use std::{
 };
 
 use anyhow::{Result, bail};
-use either::Either;
 use bincode::{
     Decode, Encode,
     de::Decoder,
@@ -17,6 +16,7 @@ use bincode::{
     error::{DecodeError, EncodeError},
     impl_borrow_decode,
 };
+use either::Either;
 use num_bigint::BigInt;
 use num_traits::identities::Zero;
 use once_cell::sync::Lazy;
@@ -352,6 +352,11 @@ impl Display for ConstantValue {
 pub struct ModuleValue {
     pub module: Wtf8Atom,
     pub annotations: Option<Arc<ImportAnnotations>>,
+    /// Whether to analyze this module for constants
+    // TODO this is a hack: ideally we'd have truly "bidirectional linking" instead of the current
+    // `early_visitor` plus `visitor` setup. Then this could just be implemented with a rewrite
+    // rule for `Member(ModuleValue, prop) if prop.as_str().is_upper_case() => { ... }`
+    pub analyze_for_constants: bool,
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -882,15 +887,21 @@ impl Display for JsValue {
             JsValue::Module(ModuleValue {
                 module: name,
                 annotations,
+                analyze_for_constants,
             }) => {
                 write!(
                     f,
-                    "Module({}, {})",
+                    "Module({}, {}{})",
                     name.to_string_lossy(),
                     if let Some(annotations) = annotations {
                         Either::Left(annotations)
                     } else {
                         Either::Right("{}")
+                    },
+                    if *analyze_for_constants {
+                        ", analyze for constants"
+                    } else {
+                        ""
                     }
                 )
             }
@@ -1710,14 +1721,20 @@ impl JsValue {
             JsValue::Module(ModuleValue {
                 module: name,
                 annotations,
+                analyze_for_constants,
             }) => {
                 format!(
-                    "module<{}, {}>",
+                    "module<{}, {}{}>",
                     name.to_string_lossy(),
                     if let Some(annotations) = annotations {
                         Either::Left(annotations)
                     } else {
                         Either::Right("{}")
+                    },
+                    if *analyze_for_constants {
+                        ", analyze for constants"
+                    } else {
+                        ""
                     }
                 )
             }
@@ -3252,12 +3269,14 @@ impl JsValue {
                 JsValue::Module(ModuleValue {
                     module: l,
                     annotations: la,
+                    analyze_for_constants: lc,
                 }),
                 JsValue::Module(ModuleValue {
                     module: r,
                     annotations: ra,
+                    analyze_for_constants: rc,
                 }),
-            ) => l == r && la == ra,
+            ) => l == r && la == ra && lc == rc,
             (JsValue::WellKnownObject(l), JsValue::WellKnownObject(r)) => l == r,
             (JsValue::WellKnownFunction(l), JsValue::WellKnownFunction(r)) => l == r,
             (
@@ -3369,9 +3388,11 @@ impl JsValue {
             JsValue::Module(ModuleValue {
                 module: v,
                 annotations: a,
+                analyze_for_constants: c,
             }) => {
                 Hash::hash(v, state);
                 Hash::hash(a, state);
+                Hash::hash(c, state);
             }
             JsValue::WellKnownObject(v) => Hash::hash(v, state),
             JsValue::WellKnownFunction(v) => Hash::hash(v, state),
@@ -3667,6 +3688,7 @@ pub mod test_utils {
                     JsValue::promise(JsValue::Module(ModuleValue {
                         module: v.as_atom().into_owned().into(),
                         annotations: None,
+                        analyze_for_constants: false,
                     }))
                 }
                 _ => v.into_unknown(true, "import() non constant"),

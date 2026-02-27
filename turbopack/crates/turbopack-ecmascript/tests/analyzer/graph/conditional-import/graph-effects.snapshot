@@ -889,12 +889,8 @@
                             Module(
                                 ModuleValue {
                                     module: "x",
-                                    annotations: ImportAnnotations {
-                                        map: {},
-                                        turbopack_loader: None,
-                                        turbopack_rename_as: None,
-                                        turbopack_module_type: None,
-                                    },
+                                    annotations: None,
+                                    analyze_for_constants: false,
                                 },
                             ),
                             Constant(
@@ -978,12 +974,8 @@
                             Module(
                                 ModuleValue {
                                     module: "y",
-                                    annotations: ImportAnnotations {
-                                        map: {},
-                                        turbopack_loader: None,
-                                        turbopack_rename_as: None,
-                                        turbopack_module_type: None,
-                                    },
+                                    annotations: None,
+                                    analyze_for_constants: false,
                                 },
                             ),
                             Constant(
@@ -1315,12 +1307,8 @@
             Module(
                 ModuleValue {
                     module: "y",
-                    annotations: ImportAnnotations {
-                        map: {},
-                        turbopack_loader: None,
-                        turbopack_rename_as: None,
-                        turbopack_module_type: None,
-                    },
+                    annotations: None,
+                    analyze_for_constants: false,
                 },
             ),
             Constant(

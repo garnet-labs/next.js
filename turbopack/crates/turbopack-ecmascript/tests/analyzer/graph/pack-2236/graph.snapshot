@@ -41,6 +41,7 @@
                     ModuleValue {
                         module: "@upstash/redis",
                         annotations: None,
+                        analyze_for_constants: false,
                     },
                 ),
                 Constant(

@@ -59,6 +59,7 @@
                         ModuleValue {
                             module: "./module.js",
                             annotations: None,
+                            analyze_for_constants: false,
                         },
                     ),
                     Constant(
@@ -98,6 +99,7 @@
                         ModuleValue {
                             module: "./module.js",
                             annotations: None,
+                            analyze_for_constants: false,
                         },
                     ),
                     Constant(

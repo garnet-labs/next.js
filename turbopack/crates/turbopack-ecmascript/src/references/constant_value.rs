@@ -40,7 +40,7 @@ impl ConstantValueCodeGen {
                 ConstantValue::Undefined => CompileTimeDefineValue::Undefined,
                 ConstantValue::Null => CompileTimeDefineValue::Null,
                 ConstantValue::Str(v) => CompileTimeDefineValue::String(v.as_rcstr()),
-                ConstantValue::Num(v) => CompileTimeDefineValue::Number(v.0.to_string().into()),
+                ConstantValue::Num(v) => CompileTimeDefineValue::Number(v.0),
                 ConstantValue::True => CompileTimeDefineValue::Bool(true),
                 ConstantValue::False => CompileTimeDefineValue::Bool(false),
                 ConstantValue::BigInt(_) => unimplemented!("ConstantValueCodeGen: Bigint"),
