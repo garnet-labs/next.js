@@ -891,6 +891,9 @@
                                     module: "x",
                                     annotations: None,
                                     analyze_for_constants: false,
+                                    reference: Some(
+                                        1,
+                                    ),
                                 },
                             ),
                             Constant(
@@ -976,6 +979,9 @@
                                     module: "y",
                                     annotations: None,
                                     analyze_for_constants: false,
+                                    reference: Some(
+                                        3,
+                                    ),
                                 },
                             ),
                             Constant(
@@ -1309,6 +1315,9 @@
                     module: "y",
                     annotations: None,
                     analyze_for_constants: false,
+                    reference: Some(
+                        4,
+                    ),
                 },
             ),
             Constant(

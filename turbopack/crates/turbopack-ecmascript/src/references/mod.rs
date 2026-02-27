@@ -470,6 +470,7 @@ struct AnalysisState<'a> {
     /// This is the current state of known values of function
     /// arguments.
     fun_args_values: Mutex<FxHashMap<u32, Vec<JsValue>>>,
+    /// A cache for the linked value of variables, to prevent exponential retraversals.
     var_cache: Mutex<FxHashMap<Id, JsValue>>,
     // There can be many references to import.meta, but only the first should hoist
     // the object allocation.
@@ -511,6 +512,7 @@ impl AnalysisState<'_> {
                     self.var_graph,
                     attributes,
                     self.allow_project_root_tracing,
+                    self.import_references,
                 )
             },
             &self.fun_args_values,
@@ -3633,6 +3635,7 @@ async fn value_visitor(
     var_graph: &VarGraph,
     attributes: &ImportAttributes,
     allow_project_root_tracing: bool,
+    import_references: &[ResolvedVc<EsmAssetReference>],
 ) -> Result<(JsValue, bool)> {
     let (mut v, modified) = value_visitor_inner(
         origin,
@@ -3642,6 +3645,7 @@ async fn value_visitor(
         var_graph,
         attributes,
         allow_project_root_tracing,
+        import_references,
     )
     .await?;
     v.normalize_shallow();
@@ -3656,6 +3660,7 @@ async fn value_visitor_inner(
     var_graph: &VarGraph,
     attributes: &ImportAttributes,
     allow_project_root_tracing: bool,
+    import_references: &[ResolvedVc<EsmAssetReference>],
 ) -> Result<(JsValue, bool)> {
     let ImportAttributes { ignore, .. } = *attributes;
     if let Some((name, _)) = v.get_definable_name(Some(var_graph))
@@ -3793,7 +3798,7 @@ async fn value_visitor_inner(
             {
                 external
             } else if let Some(module) =
-                module_value_to_constants_module(mv, origin, compile_time_info).await?
+                module_value_to_constants_module(mv, compile_time_info, import_references).await?
             {
                 module
             } else {

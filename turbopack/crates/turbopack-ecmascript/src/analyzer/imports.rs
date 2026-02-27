@@ -413,6 +413,7 @@ impl ImportMap {
                 Box::new(JsValue::Module(ModuleValue {
                     module: r.module_path.clone(),
                     annotations: r.annotations.clone(),
+                    reference: Some(*i),
                     analyze_for_constants: i_sym
                         .chars()
                         .all(|x| x.is_ascii() && (!x.is_ascii_alphabetic() || x.is_uppercase())),
@@ -425,6 +426,7 @@ impl ImportMap {
             return Some(JsValue::Module(ModuleValue {
                 module: r.module_path.clone(),
                 annotations: r.annotations.clone(),
+                reference: Some(*i),
                 analyze_for_constants: false,
             }));
         }
