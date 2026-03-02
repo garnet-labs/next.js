@@ -306,7 +306,6 @@ pub struct ModuleValue {
     // `early_visitor` plus `visitor` setup. Then this could just be implemented with a rewrite
     // rule for `Member(ModuleValue, prop) if prop.as_str().is_upper_case() => { ... }`
     pub analyze_for_constants: bool,
-    pub reference: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -838,7 +837,6 @@ impl Display for JsValue {
                 module: name,
                 annotations,
                 analyze_for_constants,
-                reference: _,
             }) => {
                 write!(
                     f,
@@ -1673,7 +1671,6 @@ impl JsValue {
                 module: name,
                 annotations,
                 analyze_for_constants,
-                reference: _,
             }) => {
                 format!(
                     "module<{}, {}{}>",
@@ -3222,15 +3219,13 @@ impl JsValue {
                     module: l,
                     annotations: la,
                     analyze_for_constants: lc,
-                    reference: lr,
                 }),
                 JsValue::Module(ModuleValue {
                     module: r,
                     annotations: ra,
                     analyze_for_constants: rc,
-                    reference: rr,
                 }),
-            ) => l == r && la == ra && lc == rc && lr == rr,
+            ) => l == r && la == ra && lc == rc,
             (JsValue::WellKnownObject(l), JsValue::WellKnownObject(r)) => l == r,
             (JsValue::WellKnownFunction(l), JsValue::WellKnownFunction(r)) => l == r,
             (
@@ -3343,12 +3338,10 @@ impl JsValue {
                 module: v,
                 annotations: a,
                 analyze_for_constants: c,
-                reference: r,
             }) => {
                 Hash::hash(v, state);
                 Hash::hash(a, state);
                 Hash::hash(c, state);
-                Hash::hash(r, state);
             }
             JsValue::WellKnownObject(v) => Hash::hash(v, state),
             JsValue::WellKnownFunction(v) => Hash::hash(v, state),
@@ -3645,7 +3638,6 @@ pub mod test_utils {
                         module: v.as_atom().into_owned().into(),
                         annotations: None,
                         analyze_for_constants: false,
-                        reference: None,
                     }))
                 }
                 _ => v.into_unknown(true, "import() non constant"),

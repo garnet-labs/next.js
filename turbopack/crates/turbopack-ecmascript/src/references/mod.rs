@@ -471,7 +471,6 @@ struct AnalysisState<'a> {
     /// This is the current state of known values of function
     /// arguments.
     fun_args_values: Mutex<FxHashMap<u32, Vec<JsValue>>>,
-    /// A cache for the linked value of variables, to prevent exponential retraversals.
     var_cache: Mutex<FxHashMap<Id, JsValue>>,
     /// A cache for the linked value of imported constants.
     constants_cache: Mutex<FxHashMap<ModuleValue, Option<JsValue>>>,
@@ -516,7 +515,6 @@ impl AnalysisState<'_> {
                     attributes,
                     self.allow_project_root_tracing,
                     &self.constants_cache,
-                    self.import_references,
                 )
             },
             &self.fun_args_values,
@@ -3628,7 +3626,6 @@ async fn value_visitor(
     attributes: &ImportAttributes,
     allow_project_root_tracing: bool,
     constants_cache: &Mutex<FxHashMap<ModuleValue, Option<JsValue>>>,
-    import_references: &[ResolvedVc<EsmAssetReference>],
 ) -> Result<(JsValue, bool)> {
     let (mut v, modified) = value_visitor_inner(
         origin,
@@ -3639,7 +3636,6 @@ async fn value_visitor(
         attributes,
         allow_project_root_tracing,
         constants_cache,
-        import_references,
     )
     .await?;
     v.normalize_shallow();
@@ -3655,7 +3651,6 @@ async fn value_visitor_inner(
     attributes: &ImportAttributes,
     allow_project_root_tracing: bool,
     constants_cache: &Mutex<FxHashMap<ModuleValue, Option<JsValue>>>,
-    import_references: &[ResolvedVc<EsmAssetReference>],
 ) -> Result<(JsValue, bool)> {
     let ImportAttributes { ignore, .. } = *attributes;
     if let Some((name, _)) = v.get_definable_name(Some(var_graph))
@@ -3792,7 +3787,11 @@ async fn value_visitor_inner(
                 && let Some(external) = module_value_to_well_known_object(mv)
             {
                 external
-            } else if (mv.analyze_for_constants || mv.annotations.has_turbopack_constants())
+            } else if (mv.analyze_for_constants
+                || mv
+                    .annotations
+                    .as_ref()
+                    .is_some_and(|a| a.has_turbopack_constants()))
                 && let cache = {
                     // Without this inline block, constants_cache.lock() is held across the await
                     // point below.
@@ -3803,8 +3802,7 @@ async fn value_visitor_inner(
                     cache_entry
                 } else {
                     let module =
-                        module_value_to_constants_module(mv, compile_time_info, import_references)
-                            .await?;
+                        module_value_to_constants_module(mv, origin, compile_time_info).await?;
                     constants_cache.lock().insert(mv.clone(), module.clone());
                     module
                 })
