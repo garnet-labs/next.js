@@ -7,9 +7,6 @@
                     module: "foo",
                     annotations: None,
                     analyze_for_constants: false,
-                    reference: Some(
-                        1,
-                    ),
                 },
             ),
             Constant(
@@ -82,9 +79,6 @@
                     module: "foo",
                     annotations: None,
                     analyze_for_constants: false,
-                    reference: Some(
-                        1,
-                    ),
                 },
             ),
             Constant(
@@ -196,9 +190,6 @@
                     module: "foo",
                     annotations: None,
                     analyze_for_constants: false,
-                    reference: Some(
-                        7,
-                    ),
                 },
             ),
             Constant(
@@ -271,9 +262,6 @@
                     module: "foo",
                     annotations: None,
                     analyze_for_constants: false,
-                    reference: Some(
-                        7,
-                    ),
                 },
             ),
             Constant(
@@ -336,9 +324,6 @@
                     module: "foo",
                     annotations: None,
                     analyze_for_constants: false,
-                    reference: Some(
-                        8,
-                    ),
                 },
             ),
             Constant(
@@ -425,9 +410,6 @@
                     module: "foo",
                     annotations: None,
                     analyze_for_constants: false,
-                    reference: Some(
-                        8,
-                    ),
                 },
             ),
             Constant(
@@ -553,9 +535,6 @@
                     module: "foo",
                     annotations: None,
                     analyze_for_constants: false,
-                    reference: Some(
-                        2,
-                    ),
                 },
             ),
             Constant(
@@ -628,9 +607,6 @@
                     module: "foo",
                     annotations: None,
                     analyze_for_constants: false,
-                    reference: Some(
-                        2,
-                    ),
                 },
             ),
             Constant(
@@ -693,9 +669,6 @@
                     module: "foo",
                     annotations: None,
                     analyze_for_constants: false,
-                    reference: Some(
-                        3,
-                    ),
                 },
             ),
             Constant(
@@ -782,9 +755,6 @@
                     module: "foo",
                     annotations: None,
                     analyze_for_constants: false,
-                    reference: Some(
-                        3,
-                    ),
                 },
             ),
             Constant(
@@ -910,9 +880,6 @@
                     module: "foo",
                     annotations: None,
                     analyze_for_constants: false,
-                    reference: Some(
-                        4,
-                    ),
                 },
             ),
             Constant(
@@ -985,9 +952,6 @@
                     module: "foo",
                     annotations: None,
                     analyze_for_constants: false,
-                    reference: Some(
-                        4,
-                    ),
                 },
             ),
             Constant(

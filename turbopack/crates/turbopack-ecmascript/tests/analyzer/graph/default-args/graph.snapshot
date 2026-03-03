@@ -60,9 +60,6 @@
                             module: "./module.js",
                             annotations: None,
                             analyze_for_constants: false,
-                            reference: Some(
-                                1,
-                            ),
                         },
                     ),
                     Constant(
@@ -103,9 +100,6 @@
                             module: "./module.js",
                             annotations: None,
                             analyze_for_constants: false,
-                            reference: Some(
-                                1,
-                            ),
                         },
                     ),
                     Constant(
