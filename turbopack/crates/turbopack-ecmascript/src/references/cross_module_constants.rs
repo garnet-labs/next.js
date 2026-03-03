@@ -49,7 +49,12 @@ pub async fn module_value_to_constants_module(
     origin: Vc<Box<dyn ResolveOrigin>>,
     compile_time_info: Vc<CompileTimeInfo>,
 ) -> Result<Option<JsValue>> {
-    if !module_value.analyze_for_constants && !module_value.annotations.has_turbopack_constants() {
+    if !module_value.analyze_for_constants
+        && !module_value
+            .annotations
+            .as_ref()
+            .is_some_and(|a| a.has_turbopack_constants())
+    {
         return Ok(None);
     }
 
@@ -109,7 +114,7 @@ impl ConstantsModule {
         {
             let has_opt_in = *has_directive || has_turbopack_annotation;
 
-            Some(JsValue::frozen_object(
+            Some(JsValue::frozen_object_missing_unknown(
                 exports
                     .iter()
                     .map(|(key, value)| {
