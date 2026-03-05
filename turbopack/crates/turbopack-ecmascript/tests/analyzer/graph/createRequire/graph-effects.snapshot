@@ -148,23 +148,6 @@
         span: 99..122,
     },
     ImportedBinding {
-        value: Member(
-            3,
-            Module(
-                ModuleValue {
-                    module: "node:module",
-                    annotations: None,
-                    analyze_for_constants: false,
-                },
-            ),
-            Constant(
-                Str(
-                    Atom(
-                        "createRequire",
-                    ),
-                ),
-            ),
-        ),
         esm_reference_index: 1,
         export: Some(
             "createRequire",

@@ -1,22 +1,5 @@
 [
     ImportedBinding {
-        value: Member(
-            3,
-            Module(
-                ModuleValue {
-                    module: "./module.js",
-                    annotations: None,
-                    analyze_for_constants: false,
-                },
-            ),
-            Constant(
-                Str(
-                    Atom(
-                        "named",
-                    ),
-                ),
-            ),
-        ),
         esm_reference_index: 1,
         export: Some(
             "named",
@@ -122,23 +105,6 @@
         ],
     },
     ImportedBinding {
-        value: Member(
-            3,
-            Module(
-                ModuleValue {
-                    module: "./module.js",
-                    annotations: None,
-                    analyze_for_constants: false,
-                },
-            ),
-            Constant(
-                Str(
-                    Atom(
-                        "named",
-                    ),
-                ),
-            ),
-        ),
         esm_reference_index: 1,
         export: Some(
             "named",
