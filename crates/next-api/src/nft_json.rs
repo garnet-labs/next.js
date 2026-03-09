@@ -379,9 +379,11 @@ impl Asset for NftJsonAsset {
                 result.extend(includes.into_iter().flatten());
             }
 
+            let (files, file_hashes): (Vec<_>, Vec<_>) = result.into_iter().unzip();
             let json = json!({
-              "version": 2,
-              "files": result
+              "version": 1,
+              "files": files,
+              "fileHashes": file_hashes
             });
 
             Ok(AssetContent::file(

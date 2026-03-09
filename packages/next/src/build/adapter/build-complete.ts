@@ -2234,14 +2234,17 @@ async function loadNFT(
   tracingRoot: string,
   traceFilePath: string
 ) {
-  const { files } = (await JSON.parse(
+  const { files, fileHashes } = (await JSON.parse(
     await fs.readFile(traceFilePath, 'utf8')
   )) as {
-    files: Record<string, string>
+    files: string[]
+    fileHashes: string[]
   }
 
   const traceFileDir = path.dirname(traceFilePath)
-  for (const [relativeFile, contentHash] of Object.entries(files)) {
+  for (let i = 0; i < files.length; i++) {
+    const relativeFile = files[i]
+    const contentHash = fileHashes[i]
     const tracedFilePath = path.join(traceFileDir, relativeFile)
     const fileOutputPath = path.relative(tracingRoot, tracedFilePath)
     assets[fileOutputPath] = tracedFilePath

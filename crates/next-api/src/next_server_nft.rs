@@ -162,15 +162,17 @@ impl Asset for ServerNftJsonAsset {
             }
         }
 
-        server_output_assets.sort();
+        server_output_assets.sort_unstable();
         // Dedupe as some entries may be duplicates: a file might be referenced multiple times,
         // e.g. as a RawModule (from an FS operation) and as an EcmascriptModuleAsset because it
         // was required.
         server_output_assets.dedup();
 
+        let (files, file_hashes): (Vec<_>, Vec<_>) = server_output_assets.into_iter().unzip();
         let json = json!({
-          "version": 2,
-          "files": server_output_assets
+            "version": 1,
+            "files": files,
+            "fileHashes": file_hashes
         });
 
         Ok(AssetContent::file(
