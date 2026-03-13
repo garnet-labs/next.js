@@ -248,10 +248,11 @@ impl ServerNftJsonAsset {
                                 None,
                                 ResolveErrorMode::Error,
                             )
+                            .await?
                             .primary_modules()
                             .await?
                             .into_iter()
-                            .map(|m| **m))
+                            .map(|m| *m))
                         })
                         .try_flat_join()
                         .await?,

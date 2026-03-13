@@ -3814,8 +3814,8 @@ async fn require_resolve_visitor(
         .to_resolved()
         .await?;
         let mut values = resolved
-            .primary_sources()
             .await?
+            .primary_sources()
             .iter()
             .map(|&source| async move {
                 Ok(require_resolve(source.ident().path().owned().await?).into())
@@ -4394,7 +4394,7 @@ async fn resolve_as_webpack_runtime(
         options,
     );
 
-    if let Some(source) = *resolved.first_source().await? {
+    if let Some(source) = resolved.await?.first_source() {
         Ok(webpack_runtime(*source, transforms))
     } else {
         Ok(WebpackRuntime::None.cell())
