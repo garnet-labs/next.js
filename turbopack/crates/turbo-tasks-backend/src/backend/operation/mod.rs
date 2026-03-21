@@ -18,7 +18,7 @@ use turbo_tasks::{
     TurboTasksCallApi, TypedSharedReference, backend::CachedTaskType,
 };
 
-use self::aggregation_update::ComputeDirtyAndCleanUpdate;
+pub use self::aggregation_update::ComputeDirtyAndCleanUpdate;
 use crate::{
     backend::{
         EventDescription, OperationGuard, TaskDataCategory, TurboTasksBackend,
@@ -266,11 +266,14 @@ impl<'e, B: BackingStorage> ExecuteContextImpl<'e, B> {
         for (i, &(task_id, category, _, _)) in tasks.iter().enumerate() {
             self.task_lock_counter.acquire();
 
-            let task = self.backend.storage.access_mut(task_id);
+            let mut task = self.backend.storage.access_mut(task_id);
             let mut ready = true;
             if matches!(category, TaskDataCategory::Data | TaskDataCategory::All)
                 && !task.flags.is_restored(TaskDataCategory::Data)
             {
+                // Mark as restoring so eviction backs off while we do I/O
+                // without the lock held.
+                task.flags.set_data_restoring(true);
                 tasks_to_restore_for_data.push(task_id);
                 tasks_to_restore_for_data_indicies.push(i);
                 ready = false;
@@ -278,6 +281,7 @@ impl<'e, B: BackingStorage> ExecuteContextImpl<'e, B> {
             if matches!(category, TaskDataCategory::Meta | TaskDataCategory::All)
                 && !task.flags.is_restored(TaskDataCategory::Meta)
             {
+                task.flags.set_meta_restoring(true);
                 tasks_to_restore_for_meta.push(task_id);
                 tasks_to_restore_for_meta_indicies.push(i);
                 ready = false;
@@ -355,6 +359,7 @@ impl<'e, B: BackingStorage> ExecuteContextImpl<'e, B> {
             {
                 task.restore_from(storage, TaskDataCategory::Data);
                 task.flags.set_restored(TaskDataCategory::Data);
+                task.flags.set_data_restoring(false);
                 task_type = task.get_persistent_task_type().cloned()
             }
             if let Some(storage) = storage_for_meta
@@ -362,6 +367,7 @@ impl<'e, B: BackingStorage> ExecuteContextImpl<'e, B> {
             {
                 task.restore_from(storage, TaskDataCategory::Meta);
                 task.flags.set_restored(TaskDataCategory::Meta);
+                task.flags.set_meta_restoring(false);
             }
             self.task_lock_counter.release();
             prepared_task_callback(self, task_id, category, task);
@@ -487,6 +493,21 @@ impl<'e, B: BackingStorage> ExecuteContext<'e> for ExecuteContextImpl<'e, B> {
             category.includes_meta() && !task2.flags.is_restored(TaskDataCategory::Meta);
 
         if needs_data1 || needs_meta1 || needs_data2 || needs_meta2 {
+            // Mark as restoring so eviction backs off while we release
+            // the locks to do I/O.
+            if needs_data1 {
+                task1.flags.set_data_restoring(true);
+            }
+            if needs_meta1 {
+                task1.flags.set_meta_restoring(true);
+            }
+            if needs_data2 {
+                task2.flags.set_data_restoring(true);
+            }
+            if needs_meta2 {
+                task2.flags.set_meta_restoring(true);
+            }
+
             // Avoid holding the lock too long since this can also affect other tasks
             // Drop locks once, do all I/O, then re-acquire once
             drop(task1);
@@ -505,30 +526,35 @@ impl<'e, B: BackingStorage> ExecuteContext<'e> for ExecuteContextImpl<'e, B> {
             task1 = t1;
             task2 = t2;
 
-            // Merge results, handling race conditions
+            // Merge results, handling race conditions — only clear restoring
+            // flag if we win the race (see comment in task() above).
             if let Some(storage) = storage_data1
                 && !task1.flags.is_restored(TaskDataCategory::Data)
             {
                 task1.restore_from(storage, TaskDataCategory::Data);
                 task1.flags.set_restored(TaskDataCategory::Data);
+                task1.flags.set_data_restoring(false);
             }
             if let Some(storage) = storage_meta1
                 && !task1.flags.is_restored(TaskDataCategory::Meta)
             {
                 task1.restore_from(storage, TaskDataCategory::Meta);
                 task1.flags.set_restored(TaskDataCategory::Meta);
+                task1.flags.set_meta_restoring(false);
             }
             if let Some(storage) = storage_data2
                 && !task2.flags.is_restored(TaskDataCategory::Data)
             {
                 task2.restore_from(storage, TaskDataCategory::Data);
                 task2.flags.set_restored(TaskDataCategory::Data);
+                task2.flags.set_data_restoring(false);
             }
             if let Some(storage) = storage_meta2
                 && !task2.flags.is_restored(TaskDataCategory::Meta)
             {
                 task2.restore_from(storage, TaskDataCategory::Meta);
                 task2.flags.set_restored(TaskDataCategory::Meta);
+                task2.flags.set_meta_restoring(false);
             }
         }
         (
@@ -658,6 +684,7 @@ impl Display for TaskTypeRef<'_> {
     }
 }
 
+#[derive(Debug)]
 pub enum TaskType {
     Cached(Arc<CachedTaskType>),
     Transient(Arc<TransientTask>),
@@ -956,12 +983,12 @@ pub trait TaskGuard: Debug + TaskStorageAccessors {
     fn get_task_desc_fn(&self) -> impl Fn() -> String + Send + Sync + 'static {
         let task_type = self.get_task_type().to_owned();
         let task_id = self.id();
-        move || format!("{task_id:?} {task_type}")
+        move || format!("{task_id:?} {task_type:?}")
     }
     fn get_task_description(&self) -> String {
         let task_type = self.get_task_type().to_owned();
         let task_id = self.id();
-        format!("{task_id:?} {task_type}")
+        format!("{task_id:?} {task_type:?}")
     }
     fn get_task_name(&self) -> String {
         let task_type = self.get_task_type().to_owned();

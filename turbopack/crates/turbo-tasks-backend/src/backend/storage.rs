@@ -8,12 +8,13 @@ use std::{
     },
 };
 
+use rustc_hash::FxHashMap;
 use thread_local::ThreadLocal;
 use turbo_bincode::TurboBincodeBuffer;
 use turbo_tasks::{FxDashMap, TaskId, parallel};
 
 use crate::{
-    backend::storage_schema::TaskStorage,
+    backend::storage_schema::{Evictability, TaskStorage, UnevictableReason},
     backing_storage::SnapshotItem,
     database::key_value_database::KeySpace,
     utils::{
@@ -27,6 +28,15 @@ pub enum TaskDataCategory {
     Meta,
     Data,
     All,
+}
+
+/// Counts of tasks evicted at each level.
+#[derive(Debug, Default)]
+pub struct EvictionCounts {
+    pub full: usize,
+    pub data_and_meta: usize,
+    pub data_only: usize,
+    pub meta_only: usize,
 }
 
 impl TaskDataCategory {
@@ -359,6 +369,81 @@ impl Storage {
     pub fn drop_contents(&self) {
         drop_contents(&self.map);
         drop_contents(&self.snapshots);
+    }
+
+    /// Evict tasks from in-memory storage after a successful snapshot.
+    ///
+    /// Iterates all tasks and applies the eviction level returned by
+    /// `TaskStorage::evictability()`:
+    /// - `Full`: remove from map entirely
+    /// - `DataAndMeta`: drop both data and meta fields, keep task in map
+    /// - `DataOnly`: drop data fields only
+    /// - `MetaOnly`: drop meta fields only
+    /// - `No`: skip
+    ///
+    /// Must be called when NOT in snapshot mode (i.e., after `end_snapshot()`).
+    pub fn evict_after_snapshot(&self) -> EvictionCounts {
+        debug_assert!(
+            !self.snapshot_mode(),
+            "evict_after_snapshot must not be called during snapshot mode"
+        );
+
+        let counts: Vec<(EvictionCounts, FxHashMap<UnevictableReason, usize>)> =
+            parallel::map_collect(self.map.shards(), |shard| {
+                let mut shard = shard.write();
+                let mut evicted = EvictionCounts::default();
+                let mut reason_counts: FxHashMap<UnevictableReason, usize> = FxHashMap::default();
+                // SAFETY: We hold the write lock for the duration of iteration.
+                for bucket in unsafe { shard.iter() } {
+                    // SAFETY: The write lock guard outlives the bucket reference.
+                    let (task_id, task) = unsafe { bucket.as_mut() };
+                    if task_id.is_transient() {
+                        continue;
+                    }
+                    match task.get().evictability() {
+                        Evictability::Full => {
+                            unsafe {
+                                shard.erase(bucket);
+                            }
+                            evicted.full += 1;
+                        }
+                        Evictability::DataAndMeta => {
+                            task.get_mut().drop_data_and_meta();
+                            evicted.data_and_meta += 1;
+                        }
+                        Evictability::DataOnly => {
+                            task.get_mut().drop_data();
+                            evicted.data_only += 1;
+                        }
+                        Evictability::MetaOnly => {
+                            task.get_mut().drop_meta();
+                            evicted.meta_only += 1;
+                        }
+                        Evictability::No(reason) => {
+                            *reason_counts.entry(reason).or_default() += 1;
+                        }
+                    }
+                }
+                (evicted, reason_counts)
+            });
+        let mut totals = EvictionCounts::default();
+        let mut reasons: FxHashMap<UnevictableReason, usize> = FxHashMap::default();
+        for (evicted, r) in counts {
+            totals.full += evicted.full;
+            totals.data_and_meta += evicted.data_and_meta;
+            totals.data_only += evicted.data_only;
+            totals.meta_only += evicted.meta_only;
+            for (reason, count) in r {
+                *reasons.entry(reason).or_default() += count;
+            }
+        }
+        let skipped: usize = reasons.values().sum();
+        eprintln!(
+            "eviction: {} full, {} data+meta, {} data-only, {} meta-only, {skipped} skipped \
+             ({reasons:?})",
+            totals.full, totals.data_and_meta, totals.data_only, totals.meta_only,
+        );
+        totals
     }
 }
 
