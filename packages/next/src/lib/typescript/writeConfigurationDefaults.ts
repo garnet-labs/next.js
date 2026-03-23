@@ -40,6 +40,21 @@ function getDesiredCompilerOptions(
   // Jsx
   const jsxEmitReactJSX = 'react-jsx'
 
+  // TypeScript requires moduleResolution 'bundler' only when module is
+  // 'preserve' or 'es2015' or later.  When the user has chosen a module
+  // kind that is incompatible (commonjs, amd, node16, nodenext) AND that
+  // value is in the accepted parsedValues (so it won't be overwritten),
+  // fall back to the legacy 'node' resolution to avoid a TS config error.
+  const userModule = userTsConfig?.compilerOptions?.module?.toLowerCase()
+  const modulesIncompatibleWithBundler = new Set([
+    moduleKindCommonJS,
+    moduleKindAMD,
+    moduleKindNode16,
+    moduleKindNodeNext,
+  ])
+  const canUseBundlerModuleResolution =
+    !userModule || !modulesIncompatibleWithBundler.has(userModule)
+
   return {
     target: {
       suggested: 'ES2017',
@@ -102,8 +117,10 @@ function getDesiredCompilerOptions(
               moduleKindNodeNext,
               moduleResolutionKindBundler,
             ].filter((val) => typeof val !== 'undefined'),
-            value: 'bundler',
-            reason: 'to match bundler module resolution',
+            value: canUseBundlerModuleResolution ? 'bundler' : 'node',
+            reason: canUseBundlerModuleResolution
+              ? 'to match bundler module resolution'
+              : 'to match webpack resolution',
           },
           resolveJsonModule: {
             value: true,

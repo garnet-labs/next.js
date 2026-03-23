@@ -121,6 +121,32 @@ describe('writeConfigurationDefaults()', () => {
       `)
     })
 
+    it('falls back to moduleResolution "node" when module is "commonjs"', async () => {
+      await writeFile(
+        tsConfigPath,
+        JSON.stringify({
+          compilerOptions: { module: 'commonjs' },
+        }),
+        { encoding: 'utf8' }
+      )
+
+      await writeConfigurationDefaults(
+        ts.version,
+        tsConfigPath,
+        isFirstTimeSetup,
+        hasAppDir,
+        distDir,
+        hasPagesDir,
+        experimentalStrictRouteTypes
+      )
+
+      const tsConfig = JSON.parse(
+        await readFile(tsConfigPath, { encoding: 'utf8' })
+      )
+
+      expect(tsConfig.compilerOptions.moduleResolution).toBe('node')
+    })
+
     it('does not warn about disabled strict mode if strict mode was already enabled', async () => {
       await writeFile(
         tsConfigPath,
