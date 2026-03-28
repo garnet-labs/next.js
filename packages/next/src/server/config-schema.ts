@@ -221,6 +221,7 @@ export const experimentalSchema = {
   cachedNavigations: z.boolean().optional(),
   partialFallbacks: z.boolean().optional(),
   dynamicOnHover: z.boolean().optional(),
+  useOffline: z.boolean().optional(),
   optimisticRouting: z.boolean().optional(),
   varyParams: z.boolean().optional(),
   prefetchInlining: z
@@ -381,6 +382,7 @@ export const experimentalSchema = {
   serverComponentsHmrCache: z.boolean().optional(),
   authInterrupts: z.boolean().optional(),
   useCache: z.boolean().optional(),
+  useNodeStreams: z.boolean().optional(),
   slowModuleDetection: z
     .object({
       buildTimeThresholdMs: z.number().int(),

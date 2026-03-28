@@ -415,6 +415,7 @@ export interface ExperimentalConfig {
    */
   partialFallbacks?: boolean
   dynamicOnHover?: boolean
+  useOffline?: boolean
   optimisticRouting?: boolean
   varyParams?: boolean
   prefetchInlining?:
@@ -915,6 +916,13 @@ export interface ExperimentalConfig {
    * Enables the use of the `"use cache"` directive.
    */
   useCache?: boolean
+
+  /**
+   * Use Node.js native streams instead of web streams for the App Router
+   * rendering pipeline on the Node.js runtime. This can improve performance
+   * by avoiding the overhead of web stream wrappers.
+   */
+  useNodeStreams?: boolean
 
   /**
    * Enables detection and reporting of slow modules during development builds.
@@ -1727,6 +1735,7 @@ export const defaultConfig = Object.freeze({
     cachedNavigations: false,
     partialFallbacks: false,
     dynamicOnHover: false,
+    useOffline: false,
     varyParams: false,
     prefetchInlining: false,
     preloadEntriesOnStart: true,
@@ -1872,6 +1881,7 @@ export interface NextConfigRuntime {
     | 'serverActions'
     | 'staleTimes'
     | 'dynamicOnHover'
+    | 'useOffline'
     | 'optimisticRouting'
     | 'inlineCss'
     | 'prefetchInlining'
@@ -1907,6 +1917,7 @@ export interface NextConfigRuntime {
     | 'partialFallbacks'
     | 'exposeTestingApiInProductionBuild'
     | 'immutableAssetToken'
+    | 'useNodeStreams'
   > & {
     // Pick on @internal fields generates invalid .d.ts files
     /** @internal */
@@ -1937,6 +1948,7 @@ export function getNextConfigRuntime(
         serverActions: ex.serverActions,
         staleTimes: ex.staleTimes,
         dynamicOnHover: ex.dynamicOnHover,
+        useOffline: ex.useOffline,
         optimisticRouting: ex.optimisticRouting,
         inlineCss: ex.inlineCss,
         prefetchInlining: ex.prefetchInlining,
@@ -1973,6 +1985,7 @@ export function getNextConfigRuntime(
         partialFallbacks: ex.partialFallbacks,
         exposeTestingApiInProductionBuild: ex.exposeTestingApiInProductionBuild,
         immutableAssetToken: ex.immutableAssetToken,
+        useNodeStreams: ex.useNodeStreams,
 
         trustHostHeader: ex.trustHostHeader,
         isExperimentalCompile: ex.isExperimentalCompile,

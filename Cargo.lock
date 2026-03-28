@@ -9725,6 +9725,7 @@ dependencies = [
  "bincode 2.0.1",
  "data-encoding",
  "sha2",
+ "smallvec",
  "turbo-tasks-macros",
  "xxhash-rust",
 ]
@@ -9896,6 +9897,7 @@ dependencies = [
  "codspeed-criterion-compat",
  "console-subscriber",
  "dunce",
+ "either",
  "futures",
  "owo-colors",
  "regex",
@@ -9927,6 +9929,7 @@ dependencies = [
  "turbopack-nodejs",
  "turbopack-resolve",
  "turbopack-trace-utils",
+ "vergen-gitcl",
  "webbrowser",
 ]
 
@@ -10468,6 +10471,7 @@ dependencies = [
  "turbopack",
  "turbopack-core",
  "turbopack-ecmascript",
+ "turbopack-node",
  "turbopack-resolve",
 ]
 
