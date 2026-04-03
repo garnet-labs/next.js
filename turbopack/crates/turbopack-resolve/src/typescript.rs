@@ -180,25 +180,23 @@ async fn resolve_extends_rooted_or_relative(
     )
     .await?;
 
-    if let Some(source) = result.first_source() {
-        return Ok(Some(source));
-    }
+    let mut result = result.first_source();
 
     // If the file doesn't end with ".json" and we can't find the file, then we have
     // to try again with it.
     // https://github.com/microsoft/TypeScript/blob/611a912d/src/compiler/commandLineParser.ts#L3305
-    if !path.ends_with(".json") {
+    if !path.ends_with(".json") && result.is_none() {
         let request = Request::parse_string(format!("{path}.json").into());
-        return Ok(resolve(
+        result = resolve(
             lookup_path.clone(),
             ReferenceType::TypeScript(TypeScriptReferenceSubType::Undefined),
             request,
             resolve_options,
         )
         .await?
-        .first_source());
+        .first_source();
     }
-    Ok(None)
+    Ok(result)
 }
 
 pub async fn read_from_tsconfigs<T>(
