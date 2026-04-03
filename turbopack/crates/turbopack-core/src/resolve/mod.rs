@@ -336,13 +336,11 @@ impl ModuleResolveResult {
     /// Duplicates are already marked at construction time so no extra dedup is
     /// needed here.
     pub async fn primary_modules(&self) -> Result<Vec<ResolvedVc<Box<dyn Module>>>> {
-        let mut modules = Vec::new();
-        for (_, item) in self.primary.iter() {
-            if let Some(module) = item.as_module().await? {
-                modules.push(module);
-            }
-        }
-        Ok(modules)
+        self.primary
+            .iter()
+            .map(async |(_, item)| item.as_module().await)
+            .try_flat_join()
+            .await
     }
 
     /// Returns the first module in the result, or None.
@@ -741,17 +739,14 @@ impl ResolveResult {
         })
     }
 
-    pub fn primary_sources(&self) -> Vec<ResolvedVc<Box<dyn Source>>> {
-        self.primary
-            .iter()
-            .filter_map(|(_, item)| {
-                if let &ResolveResultItem::Source(a) = item {
-                    Some(a)
-                } else {
-                    None
-                }
-            })
-            .collect()
+    pub fn primary_sources(&self) -> impl Iterator<Item = ResolvedVc<Box<dyn Source>>> {
+        self.primary.iter().filter_map(|(_, item)| {
+            if let &ResolveResultItem::Source(a) = item {
+                Some(a)
+            } else {
+                None
+            }
+        })
     }
 
     pub async fn map_module<A, AF>(&self, source_fn: A) -> Result<ModuleResolveResult>

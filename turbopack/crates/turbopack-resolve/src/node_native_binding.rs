@@ -272,7 +272,8 @@ async fn resolve_node_gyp_build_files(
         true,
     );
     let gyp_file = gyp_file.await?;
-    if let [binding_gyp] = &gyp_file.primary_sources()[..] {
+    let mut primary_sources = gyp_file.primary_sources();
+    if let (Some(binding_gyp), None) = (primary_sources.next(), primary_sources.next()) {
         let mut merged_affecting_sources = if collect_affecting_sources {
             gyp_file.get_affecting_sources().collect::<Vec<_>>()
         } else {
