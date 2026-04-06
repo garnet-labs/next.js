@@ -2026,6 +2026,7 @@ export interface NextConfigRuntime {
     | 'exposeTestingApiInProductionBuild'
     | 'supportsImmutableAssets'
     | 'useNodeStreams'
+    | 'turbopackBrowserEsmChunks'
   > & {
     // Pick on @internal fields generates invalid .d.ts files
     /** @internal */
@@ -2095,6 +2096,7 @@ export function getNextConfigRuntime(
         exposeTestingApiInProductionBuild: ex.exposeTestingApiInProductionBuild,
         supportsImmutableAssets: ex.supportsImmutableAssets,
         useNodeStreams: ex.useNodeStreams,
+        turbopackBrowserEsmChunks: ex.turbopackBrowserEsmChunks,
 
         trustHostHeader: ex.trustHostHeader,
         isExperimentalCompile: ex.isExperimentalCompile,
