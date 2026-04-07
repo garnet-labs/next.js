@@ -8,13 +8,13 @@ use std::{
     },
 };
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHasher};
 use thread_local::ThreadLocal;
 use turbo_bincode::TurboBincodeBuffer;
-use turbo_tasks::{FxDashMap, TaskId, parallel};
+use turbo_tasks::{FxDashMap, TaskId, backend::CachedTaskType, parallel};
 
 use crate::{
-    backend::storage_schema::{Evictability, TaskStorage, UnevictableReason},
+    backend::storage_schema::{DataEvictability, KeyEvictability, TaskStorage, UnevictableReason},
     backing_storage::SnapshotItem,
     database::key_value_database::KeySpace,
     utils::{
@@ -33,6 +33,7 @@ pub enum TaskDataCategory {
 /// Counts of tasks evicted at each level.
 #[derive(Debug, Default)]
 pub struct EvictionCounts {
+    pub key_evictions: usize,
     pub full: usize,
     pub data_and_meta: usize,
     pub data_only: usize,
@@ -93,6 +94,11 @@ pub struct Storage {
     ///   be marked as modified at the beginning of the next snapshot cycle.
     snapshots: FxDashMap<TaskId, Option<Box<TaskStorage>>>,
     map: FxDashMap<TaskId, Box<TaskStorage>>,
+    /// Maps `CachedTaskType` → `TaskId` for deduplication of persistent task creation.
+    /// Acts as a pure performance cache: once `new_task` is cleared (task type persisted to
+    /// backing storage), entries can be evicted and will be restored via `task_by_type()` on
+    /// next miss. Transient task entries are never evicted.
+    pub task_cache: FxDashMap<Arc<CachedTaskType>, TaskId>,
 }
 
 impl Storage {
@@ -125,6 +131,7 @@ impl Storage {
                 shard_amount,
             ),
             map,
+            task_cache: FxDashMap::default(),
         }
     }
 
@@ -369,6 +376,7 @@ impl Storage {
     pub fn drop_contents(&self) {
         drop_contents(&self.map);
         drop_contents(&self.snapshots);
+        drop_contents(&self.task_cache);
     }
 
     /// Evict tasks from in-memory storage after a successful snapshot.
@@ -383,6 +391,16 @@ impl Storage {
     ///
     /// Must be called when NOT in snapshot mode (i.e., after `end_snapshot()`).
     pub fn evict_after_snapshot(&self) -> EvictionCounts {
+        let span = tracing::trace_span!(
+            "evict_after_snapshot",
+            task_cache = tracing::field::Empty,
+            full = tracing::field::Empty,
+            data_and_meta = tracing::field::Empty,
+            data_only = tracing::field::Empty,
+            meta_only = tracing::field::Empty,
+            skipped = tracing::field::Empty,
+        )
+        .entered();
         debug_assert!(
             !self.snapshot_mode(),
             "evict_after_snapshot must not be called during snapshot mode"
@@ -400,35 +418,58 @@ impl Storage {
                     if task_id.is_transient() {
                         continue;
                     }
-                    match task.get().evictability() {
-                        Evictability::Full => {
+                    let (key, data) = task.get().evictability();
+                    if matches!(key, KeyEvictability::Evictable) {
+                        evicted.key_evictions += 1;
+                        // The task type is persisted to backing storage (new_task = false),
+                        // so task_cache is a pure perf cache. Remove it now; it will be
+                        // re-populated by task_by_type() on the next cache miss.
+                        if let Some(task_type) = task.get().get_persistent_task_type() {
+                            self.task_cache.remove(task_type.as_ref());
+                        }
+                    }
+                    match data {
+                        DataEvictability::Full => {
                             unsafe {
                                 shard.erase(bucket);
                             }
                             evicted.full += 1;
                         }
-                        Evictability::DataAndMeta => {
+                        DataEvictability::DataAndMeta => {
                             task.get_mut().drop_data_and_meta();
                             evicted.data_and_meta += 1;
                         }
-                        Evictability::DataOnly => {
+                        DataEvictability::DataOnly => {
                             task.get_mut().drop_data();
                             evicted.data_only += 1;
                         }
-                        Evictability::MetaOnly => {
+                        DataEvictability::MetaOnly => {
                             task.get_mut().drop_meta();
                             evicted.meta_only += 1;
                         }
-                        Evictability::No(reason) => {
+                        DataEvictability::No(reason) => {
                             *reason_counts.entry(reason).or_default() += 1;
                         }
                     }
+                }
+                // Shrink the shard if it's less than half full, to reclaim slack capacity
+                // after bulk evictions. We already hold the write lock, so this is free
+                // from a locking perspective. TaskId hashing is cheap (it's just an integer).
+                let len = shard.len();
+                if shard.capacity() > len * 2 {
+                    shard.shrink_to(len, |(k, _v)| {
+                        use std::hash::{Hash, Hasher};
+                        let mut h = FxHasher::default();
+                        k.hash(&mut h);
+                        h.finish()
+                    });
                 }
                 (evicted, reason_counts)
             });
         let mut totals = EvictionCounts::default();
         let mut reasons: FxHashMap<UnevictableReason, usize> = FxHashMap::default();
         for (evicted, r) in counts {
+            totals.key_evictions += evicted.key_evictions;
             totals.full += evicted.full;
             totals.data_and_meta += evicted.data_and_meta;
             totals.data_only += evicted.data_only;
@@ -437,12 +478,19 @@ impl Storage {
                 *reasons.entry(reason).or_default() += count;
             }
         }
+        // Shrink task_cache only when we evicted more entries than remain — i.e. the map
+        // is less than half full. shrink_to_fit() acquires each shard write lock in turn
+        // and rehashes surviving CachedTaskType entries, so we gate it on meaningful slack.
+        if totals.key_evictions > self.task_cache.len() {
+            self.task_cache.shrink_to_fit();
+        }
         let skipped: usize = reasons.values().sum();
-        eprintln!(
-            "eviction: {} full, {} data+meta, {} data-only, {} meta-only, {skipped} skipped \
-             ({reasons:?})",
-            totals.full, totals.data_and_meta, totals.data_only, totals.meta_only,
-        );
+        span.record("task_cache", totals.key_evictions);
+        span.record("full", totals.full);
+        span.record("data_and_meta", totals.data_and_meta);
+        span.record("data_only", totals.data_only);
+        span.record("meta_only", totals.meta_only);
+        span.record("skipped", skipped);
         totals
     }
 }

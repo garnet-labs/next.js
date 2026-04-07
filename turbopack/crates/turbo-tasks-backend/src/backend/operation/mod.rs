@@ -373,7 +373,11 @@ impl<'e, B: BackingStorage> ExecuteContextImpl<'e, B> {
             prepared_task_callback(self, task_id, category, task);
             if let Some(task_type) = task_type {
                 // Insert into the task cache to avoid future lookups
-                self.backend.task_cache.entry(task_type).or_insert(task_id);
+                self.backend
+                    .storage
+                    .task_cache
+                    .entry(task_type)
+                    .or_insert(task_id);
             }
         }
     }

@@ -27,9 +27,9 @@ use tokio::time::{Duration, Instant};
 use tracing::{Span, trace_span};
 use turbo_bincode::{TurboBincodeBuffer, new_turbo_bincode_decoder, new_turbo_bincode_encoder};
 use turbo_tasks::{
-    CellId, FxDashMap, RawVc, ReadCellOptions, ReadCellTracking, ReadConsistency,
-    ReadOutputOptions, ReadTracking, SharedReference, TRANSIENT_TASK_BIT, TaskExecutionReason,
-    TaskId, TaskPriority, TraitTypeId, TurboTasksBackendApi, TurboTasksPanic, ValueTypeId,
+    CellId, RawVc, ReadCellOptions, ReadCellTracking, ReadConsistency, ReadOutputOptions,
+    ReadTracking, SharedReference, TRANSIENT_TASK_BIT, TaskExecutionReason, TaskId, TaskPriority,
+    TraitTypeId, TurboTasksBackendApi, TurboTasksPanic, ValueTypeId,
     backend::{
         Backend, CachedTaskType, CellContent, CellHash, TaskExecutionSpec, TransientTaskType,
         TurboTaskContextError, TurboTaskLocalContextError, TurboTasksError,
@@ -71,7 +71,6 @@ use crate::{
     error::TaskError,
     utils::{
         arc_or_owned::ArcOrOwned,
-        dash_map_drop_contents::drop_contents,
         dash_map_raw_entry::{RawEntry, raw_entry},
         ptr_eq_arc::PtrEqArc,
         shard_amount::compute_shard_amount,
@@ -178,8 +177,6 @@ struct TurboTasksBackendInner<B: BackingStorage> {
     persisted_task_id_factory: IdFactoryWithReuse<TaskId>,
     transient_task_id_factory: IdFactoryWithReuse<TaskId>,
 
-    task_cache: FxDashMap<Arc<CachedTaskType>, TaskId>,
-
     storage: Storage,
 
     /// Number of executing operations + Highest bit is set when snapshot is
@@ -262,7 +259,6 @@ impl<B: BackingStorage> TurboTasksBackendInner<B> {
                 TaskId::try_from(TRANSIENT_TASK_BIT).unwrap(),
                 TaskId::MAX,
             ),
-            task_cache: FxDashMap::default(),
             storage: Storage::new(shard_amount, small_preallocation),
             in_progress_operations: AtomicUsize::new(0),
             snapshot_request: Mutex::new(SnapshotRequest::new()),
@@ -1518,7 +1514,6 @@ impl<B: BackingStorage> TurboTasksBackendInner<B> {
         if self.should_persist() {
             self.snapshot_and_persist(Span::current().into(), "stop", turbo_tasks);
         }
-        drop_contents(&self.task_cache);
         self.storage.drop_contents();
         if let Err(err) = self.backing_storage.shutdown() {
             println!("Shutting down failed: {err}");
@@ -1570,7 +1565,7 @@ impl<B: BackingStorage> TurboTasksBackendInner<B> {
         // First check if the task exists in the cache which only uses a read lock
         // .map(|r| *r) copies the TaskId and drops the DashMap Ref (releasing the read lock)
         // before ConnectChildOperation::run, which may re-enter task_cache with a write lock.
-        if let Some(task_id) = self.task_cache.get(&task_type).map(|r| *r) {
+        if let Some(task_id) = self.storage.task_cache.get(&task_type).map(|r| *r) {
             self.track_cache_hit(&task_type);
             self.connect_child(
                 parent_task,
@@ -1589,7 +1584,7 @@ impl<B: BackingStorage> TurboTasksBackendInner<B> {
             // Task exists in backing storage
             // So we only need to insert it into the in-memory cache
             self.track_cache_hit(&task_type);
-            let task_type = match raw_entry(&self.task_cache, &task_type) {
+            let task_type = match raw_entry(&self.storage.task_cache, &task_type) {
                 RawEntry::Occupied(_) => ArcOrOwned::Owned(task_type),
                 RawEntry::Vacant(e) => {
                     let task_type = Arc::new(task_type);
@@ -1601,7 +1596,7 @@ impl<B: BackingStorage> TurboTasksBackendInner<B> {
         } else {
             // Task doesn't exist in memory cache or backing storage
             // So we might need to create a new task
-            let (task_id, task_type) = match raw_entry(&self.task_cache, &task_type) {
+            let (task_id, task_type) = match raw_entry(&self.storage.task_cache, &task_type) {
                 RawEntry::Occupied(e) => {
                     // Another thread beat us to creating this task - use their task_id.
                     // They will handle logging the new task as modified
@@ -1662,7 +1657,7 @@ impl<B: BackingStorage> TurboTasksBackendInner<B> {
         // First check if the task exists in the cache which only uses a read lock.
         // .map(|r| *r) copies the TaskId and drops the DashMap Ref (releasing the read lock)
         // before ConnectChildOperation::run, which may re-enter task_cache with a write lock.
-        if let Some(task_id) = self.task_cache.get(&task_type).map(|r| *r) {
+        if let Some(task_id) = self.storage.task_cache.get(&task_type).map(|r| *r) {
             self.track_cache_hit(&task_type);
             self.connect_child(
                 parent_task,
@@ -1673,7 +1668,7 @@ impl<B: BackingStorage> TurboTasksBackendInner<B> {
             return task_id;
         }
         // If not, acquire a write lock and double check / insert
-        match raw_entry(&self.task_cache, &task_type) {
+        match raw_entry(&self.storage.task_cache, &task_type) {
             RawEntry::Occupied(e) => {
                 let task_id = *e.get();
                 drop(e);
