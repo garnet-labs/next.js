@@ -8,6 +8,7 @@ import {
   getRedboxSource,
 } from 'next-test-utils'
 import cheerio from 'cheerio'
+import * as os from 'os'
 import { join } from 'path'
 import webdriver from 'next-webdriver'
 import fs from 'fs-extra'
@@ -31,6 +32,17 @@ describe('tsconfig-path-reloading', () => {
       )
 
       const typescriptVersion = testBaseUrl ? '5.9.3' : 'latest'
+      if (!testBaseUrl) {
+        const tsconfig = JSON.parse(tsConfigContent)
+        delete tsconfig.compilerOptions.baseUrl
+        tsconfig.compilerOptions.paths = {
+          '@c/*': ['./components/*'],
+          '@lib/*': ['./lib/first-lib/*'],
+          '@mybutton': ['./components/button-2.tsx'],
+        }
+
+        tsConfigContent = JSON.stringify(tsconfig, null, 2) + os.EOL
+      }
 
       next = await createNext({
         files: {
