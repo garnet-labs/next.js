@@ -6381,6 +6381,9 @@ async function renderWithRestartOnCacheMissInValidation(
 }> {
   const { componentMod: ComponentMod } = ctx
   const { clientModules } = getClientReferenceManifest()
+  const renderFlightStream = process.env.__NEXT_USE_NODE_STREAMS
+    ? renderToNodeFlightStream
+    : renderToWebFlightStream
 
   let startTime = -Infinity
   let requestStore: RequestStore = initialRequestStore
@@ -6445,7 +6448,7 @@ async function renderWithRestartOnCacheMissInValidation(
 
       const stream = workUnitAsyncStorage.run(
         requestStore,
-        renderToWebFlightStream,
+        renderFlightStream,
         ComponentMod,
         initialRscPayload,
         clientModules,
@@ -6546,7 +6549,7 @@ async function renderWithRestartOnCacheMissInValidation(
 
       const stream = workUnitAsyncStorage.run(
         requestStore,
-        renderToWebFlightStream,
+        renderFlightStream,
         ComponentMod,
         finalRscPayload,
         clientModules,
