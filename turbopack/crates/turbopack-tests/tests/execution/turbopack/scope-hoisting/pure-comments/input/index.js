@@ -9,5 +9,6 @@ it('should retain PURE comments with scope hoisting', () => {
     )
   )
 
-  expect(factory.toString()).not.toContain('THIS_SHOULD_BE_REMOVED')
+  const source = factory.toString()
+  expect(source).toContain('var Unused =' + ' /*#__PURE__*/')
 })
