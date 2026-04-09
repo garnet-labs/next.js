@@ -52,7 +52,7 @@ use either::Either;
 use itertools::Itertools;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Deserialize;
-use smallvec::SmallVec;
+use smallvec::{SmallVec, smallvec};
 use swc_core::{
     atoms::Atom,
     base::SwcComments,
@@ -87,7 +87,9 @@ use turbopack_core::{
         MergeableModule, MergeableModuleExposure, MergeableModules, MergeableModulesExposed,
         MinifyType, ModuleChunkItemIdExt, ModuleId,
     },
-    compile_time_info::CompileTimeInfo,
+    compile_time_info::{
+        CompileTimeDefineValue, CompileTimeInfo, DefinableNameSegmentRef, DefinableNameSegmentRefs,
+    },
     context::AssetContext,
     ident::AssetIdent,
     module::{Module, ModuleSideEffects, OptionModule},
@@ -701,10 +703,24 @@ impl EcmascriptModuleAsset {
 impl EcmascriptModuleAsset {
     pub async fn parse(&self) -> Result<Vc<ParseResult>> {
         let options = self.options.await?;
+        let node_env = {
+            let key = DefinableNameSegmentRefs(smallvec![
+                DefinableNameSegmentRef::Name("process"),
+                DefinableNameSegmentRef::Name("env"),
+                DefinableNameSegmentRef::Name("NODE_ENV"),
+            ]);
+            let defines = self.compile_time_info.await?.defines.await?;
+            match defines.get(&key) {
+                Some(CompileTimeDefineValue::String(s)) => s.clone(),
+                Some(CompileTimeDefineValue::Evaluate(s)) => s.clone(),
+                _ => rcstr!("development"),
+            }
+        };
         Ok(parse(
             *self.source,
             self.ty,
             *self.transforms,
+            node_env,
             options.analyze_mode == AnalyzeMode::Tracing,
             options.inline_helpers,
         ))

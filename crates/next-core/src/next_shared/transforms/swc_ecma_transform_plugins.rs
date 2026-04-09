@@ -7,25 +7,23 @@ use turbopack::module_options::ModuleRule;
 #[allow(unused_imports)]
 use turbopack_core::{context::AssetContext, resolve::origin::ResolveOrigin};
 
-use crate::{mode::NextMode, next_config::NextConfig};
+use crate::next_config::NextConfig;
 
 pub async fn get_swc_ecma_transform_plugin_rule(
     next_config: Vc<NextConfig>,
     project_path: FileSystemPath,
-    mode: Vc<NextMode>,
 ) -> Result<Option<ModuleRule>> {
     let plugin_configs = next_config.experimental_swc_plugins().await?;
     if !plugin_configs.is_empty() {
         #[cfg(feature = "plugin")]
         {
             let enable_mdx_rs = next_config.mdx_rs().await?.is_some();
-            get_swc_ecma_transform_rule_impl(project_path, &plugin_configs, enable_mdx_rs, mode)
-                .await
+            get_swc_ecma_transform_rule_impl(project_path, &plugin_configs, enable_mdx_rs).await
         }
 
         #[cfg(not(feature = "plugin"))]
         {
-            let _ = (project_path, mode); // To satisfy lint
+            let _ = project_path; // To satisfy lint
             Ok(None)
         }
     } else {
@@ -68,7 +66,6 @@ pub async fn get_swc_ecma_transform_rule_impl(
     project_path: FileSystemPath,
     plugin_configs: &[(RcStr, serde_json::Value)],
     enable_mdx_rs: bool,
-    mode: Vc<NextMode>,
 ) -> Result<Option<ModuleRule>> {
     use anyhow::bail;
     use turbo_tasks::TryFlatJoinIterExt;
@@ -87,8 +84,6 @@ pub async fn get_swc_ecma_transform_rule_impl(
     };
 
     use crate::next_shared::transforms::{EcmascriptTransformStage, get_ecma_transform_rule};
-
-    let node_env = mode.await?.node_env().to_string();
 
     let plugins = plugin_configs
         .iter()
@@ -162,7 +157,7 @@ pub async fn get_swc_ecma_transform_rule_impl(
         .await?;
 
     Ok(Some(get_ecma_transform_rule(
-        Box::new(SwcEcmaTransformPluginsTransformer::new(plugins, node_env)),
+        Box::new(SwcEcmaTransformPluginsTransformer::new(plugins)),
         enable_mdx_rs,
         EcmascriptTransformStage::Main,
     )))

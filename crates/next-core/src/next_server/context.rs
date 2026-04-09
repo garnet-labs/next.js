@@ -537,7 +537,7 @@ pub async fn get_server_module_options_context(
         get_react_remove_properties_transform_rule(next_config).await?,
         get_emotion_transform_rule(next_config).await?,
         get_relay_transform_rule(next_config, project_path.clone()).await?,
-        get_swc_ecma_transform_plugin_rule(next_config, project_path.clone(), mode).await?,
+        get_swc_ecma_transform_plugin_rule(next_config, project_path.clone()).await?,
     ]
     .into_iter()
     .flatten()

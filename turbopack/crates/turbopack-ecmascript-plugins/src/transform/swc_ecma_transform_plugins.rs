@@ -140,25 +140,22 @@ impl Issue for SwcEcmaTransformFailureIssue {
 pub struct SwcEcmaTransformPluginsTransformer {
     #[cfg(feature = "swc_ecma_transform_plugin")]
     plugins: Vec<(turbo_tasks::ResolvedVc<SwcPluginModule>, serde_json::Value)>,
-    #[cfg_attr(not(feature = "swc_ecma_transform_plugin"), allow(dead_code))]
-    node_env: String,
 }
 
 impl SwcEcmaTransformPluginsTransformer {
     #[cfg(feature = "swc_ecma_transform_plugin")]
     pub fn new(
         plugins: Vec<(turbo_tasks::ResolvedVc<SwcPluginModule>, serde_json::Value)>,
-        node_env: String,
     ) -> Self {
-        Self { plugins, node_env }
+        Self { plugins }
     }
 
     // [TODO] Due to WEB-1102 putting this module itself behind compile time feature
     // doesn't work. Instead allow to instantiate dummy instance.
     #[cfg(not(feature = "swc_ecma_transform_plugin"))]
     #[allow(clippy::new_without_default)]
-    pub fn new(node_env: String) -> Self {
-        Self { node_env }
+    pub fn new() -> Self {
+        Self {}
     }
 }
 
@@ -235,13 +232,12 @@ impl CustomTransformer for SwcEcmaTransformPluginsTransformer {
                 ctx: &TransformContext<'_>,
                 plugins: Vec<(RcStr, serde_json::Value, Box<CompiledPluginModuleBytes>)>,
                 should_enable_comments_proxy: bool,
-                node_env: &str,
             ) -> Result<Program> {
                 use either::Either;
 
                 let transform_metadata_context = Arc::new(TransformPluginMetadataContext::new(
                     Some(ctx.file_path_str.to_string()),
-                    node_env.to_string(),
+                    ctx.node_env.to_string(),
                     None,
                 ));
 
@@ -297,7 +293,6 @@ impl CustomTransformer for SwcEcmaTransformPluginsTransformer {
                         ctx,
                         plugins,
                         should_enable_comments_proxy,
-                        &self.node_env,
                     ) {
                         Ok(program) => anyhow::Ok(program),
                         Err(e) => {

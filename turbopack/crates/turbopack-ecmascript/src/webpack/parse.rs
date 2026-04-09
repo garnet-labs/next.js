@@ -12,6 +12,7 @@ use swc_core::{
         visit::{Visit, VisitWith},
     },
 };
+use turbo_rcstr::rcstr;
 use turbo_tasks::Vc;
 use turbo_tasks_fs::FileSystemPath;
 use turbopack_core::source::Source;
@@ -194,6 +195,7 @@ pub async fn webpack_runtime(
         source,
         EcmascriptModuleAssetType::Ecmascript,
         transforms,
+        rcstr!("development"),
         false,
         false,
     )

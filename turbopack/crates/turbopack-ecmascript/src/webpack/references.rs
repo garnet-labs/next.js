@@ -30,6 +30,7 @@ pub async fn module_references(
         *source,
         EcmascriptModuleAssetType::Ecmascript,
         *transforms,
+        rcstr!("development"),
         false,
         false,
     )
