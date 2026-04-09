@@ -52,7 +52,7 @@ use either::Either;
 use itertools::Itertools;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Deserialize;
-use smallvec::{SmallVec, smallvec};
+use smallvec::SmallVec;
 use swc_core::{
     atoms::Atom,
     base::SwcComments,
@@ -87,9 +87,7 @@ use turbopack_core::{
         MergeableModule, MergeableModuleExposure, MergeableModules, MergeableModulesExposed,
         MinifyType, ModuleChunkItemIdExt, ModuleId,
     },
-    compile_time_info::{
-        CompileTimeDefineValue, CompileTimeInfo, DefinableNameSegmentRef, DefinableNameSegmentRefs,
-    },
+    compile_time_info::CompileTimeInfo,
     context::AssetContext,
     ident::AssetIdent,
     module::{Module, ModuleSideEffects, OptionModule},
@@ -113,7 +111,9 @@ use crate::{
     },
     code_gen::{CodeGeneration, CodeGenerationHoistedStmt, CodeGens, ModifiableAst},
     merged_module::MergedEcmascriptModule,
-    parse::{IdentCollector, ParseResult, generate_js_source_map, parse},
+    parse::{
+        IdentCollector, ParseResult, generate_js_source_map, node_env_from_compile_time_info, parse,
+    },
     path_visitor::ApplyVisitors,
     references::{
         analyze_ecmascript_module,
@@ -703,19 +703,7 @@ impl EcmascriptModuleAsset {
 impl EcmascriptModuleAsset {
     pub async fn parse(&self) -> Result<Vc<ParseResult>> {
         let options = self.options.await?;
-        let node_env = {
-            let key = DefinableNameSegmentRefs(smallvec![
-                DefinableNameSegmentRef::Name("process"),
-                DefinableNameSegmentRef::Name("env"),
-                DefinableNameSegmentRef::Name("NODE_ENV"),
-            ]);
-            let defines = self.compile_time_info.await?.defines.await?;
-            match defines.get(&key) {
-                Some(CompileTimeDefineValue::String(s)) => s.clone(),
-                Some(CompileTimeDefineValue::Evaluate(s)) => s.clone(),
-                _ => rcstr!("development"),
-            }
-        };
+        let node_env = node_env_from_compile_time_info(*self.compile_time_info).await?;
         Ok(parse(
             *self.source,
             self.ty,

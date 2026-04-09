@@ -1003,9 +1003,10 @@ async fn analyze_ecmascript_module_internal(
         let span = tracing::trace_span!("webpack runtime reference");
         async {
             let request = Request::parse(request.into()).to_resolved().await?;
-            let runtime = resolve_as_webpack_runtime(*origin, *request, *transforms)
-                .to_resolved()
-                .await?;
+            let runtime =
+                resolve_as_webpack_runtime(*origin, *request, *transforms, *compile_time_info)
+                    .to_resolved()
+                    .await?;
 
             if let WebpackRuntime::Webpack5 { .. } = &*runtime.await? {
                 ignore_effect_span = Some(webpack_runtime_span);
@@ -1015,6 +1016,7 @@ async fn analyze_ecmascript_module_internal(
                         request,
                         runtime,
                         transforms,
+                        compile_time_info,
                     }
                     .resolved_cell(),
                 );
@@ -1025,6 +1027,7 @@ async fn analyze_ecmascript_module_internal(
                             source,
                             runtime,
                             transforms,
+                            compile_time_info,
                         }
                         .resolved_cell(),
                     );
@@ -1036,6 +1039,7 @@ async fn analyze_ecmascript_module_internal(
                             chunk_id: chunk,
                             runtime,
                             transforms,
+                            compile_time_info,
                         }
                         .resolved_cell(),
                     );
@@ -4382,6 +4386,7 @@ async fn resolve_as_webpack_runtime(
     origin: Vc<Box<dyn ResolveOrigin>>,
     request: Vc<Request>,
     transforms: Vc<EcmascriptInputTransforms>,
+    compile_time_info: Vc<CompileTimeInfo>,
 ) -> Result<Vc<WebpackRuntime>> {
     let options = origin.resolve_options();
 
@@ -4395,7 +4400,7 @@ async fn resolve_as_webpack_runtime(
     );
 
     if let Some(source) = *resolved.first_source().await? {
-        Ok(webpack_runtime(*source, transforms))
+        Ok(webpack_runtime(*source, transforms, compile_time_info))
     } else {
         Ok(WebpackRuntime::None.cell())
     }
