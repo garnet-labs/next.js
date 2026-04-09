@@ -116,6 +116,7 @@ use crate::{
     references::{
         analyze_ecmascript_module,
         async_module::OptionAsyncModule,
+        compute_ecmascript_module_exports,
         esm::{UrlRewriteBehavior, base::EsmAssetReferences, export},
     },
     side_effect_optimization::reference::EcmascriptModulePartReference,
@@ -693,6 +694,11 @@ impl EcmascriptModuleAsset {
     }
 
     #[turbo_tasks::function]
+    pub fn compute_exports(self: Vc<Self>) -> Vc<EcmascriptExports> {
+        compute_ecmascript_module_exports(self, None)
+    }
+
+    #[turbo_tasks::function]
     pub fn options(&self) -> Vc<EcmascriptOptions> {
         *self.options
     }
@@ -796,8 +802,8 @@ impl ChunkableModule for EcmascriptModuleAsset {
 #[turbo_tasks::value_impl]
 impl EcmascriptChunkPlaceable for EcmascriptModuleAsset {
     #[turbo_tasks::function]
-    async fn get_exports(self: Vc<Self>) -> Result<Vc<EcmascriptExports>> {
-        Ok(*self.analyze().await?.exports)
+    fn get_exports(self: Vc<Self>) -> Vc<EcmascriptExports> {
+        self.compute_exports()
     }
 
     #[turbo_tasks::function]

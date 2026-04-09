@@ -20,7 +20,8 @@ use crate::{
     },
     parse::ParseResult,
     references::{
-        FollowExportsResult, analyze_ecmascript_module, esm::FoundExportType, follow_reexports,
+        FollowExportsResult, analyze_ecmascript_module, compute_ecmascript_module_exports,
+        esm::FoundExportType, follow_reexports,
     },
     rename::module::EcmascriptModuleRenameModule,
     tree_shake::{
@@ -350,8 +351,11 @@ impl Module for EcmascriptModulePartAsset {
 #[turbo_tasks::value_impl]
 impl EcmascriptChunkPlaceable for EcmascriptModulePartAsset {
     #[turbo_tasks::function]
-    async fn get_exports(self: Vc<Self>) -> Result<Vc<EcmascriptExports>> {
-        Ok(*self.analyze().await?.exports)
+    async fn get_exports(&self) -> Result<Vc<EcmascriptExports>> {
+        Ok(compute_ecmascript_module_exports(
+            *self.full_module,
+            Some(self.part.clone()),
+        ))
     }
 
     #[turbo_tasks::function]
