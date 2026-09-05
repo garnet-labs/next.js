@@ -8,12 +8,17 @@ import crypto from 'node:crypto';
 import dns from 'node:dns/promises';
 import {spawn, spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {planAdditionalLockfile, planBunLockfile, reviewedImageTag, assertNoUnselectedBun} from './garnet-additional-lockfiles.mjs';
+import {planAdditionalLockfile, planBunLockfile, reviewedImageTag, assertNoUnselectedBun,
+  planReviewedPythonRuntime, reviewedPythonRuntimeImage, validateReviewedPythonImage,
+  validateReviewedPythonRuntimeWorkloads, expectedGoMaterialization, validateStaticInventory,
+  auditMaterialization, auditPreparedGoCopy, expectedGoPlan, validateGoReceipt,
+  parseGoGitTree} from './garnet-additional-lockfiles.mjs';
 
 export const POLICY = 'garnet-dependabot-container-v2';
 // Additive capability marker for the independent publisher. Legacy v2 code
 // without this marker must retain its own historical validation contract.
-export const REVIEWED_EXCEPTIONS_VERSION = 1;
+export const REVIEWED_EXCEPTIONS_VERSION = 2;
+export const REVIEWED_PYTHON_POLICIES_VERSION = 1;
 export const ACTION = 'e546567a72e4fede11ec39d6e9f75b539adef22c';
 export const SENSOR = 'v2.16.0';
 // These bounds are ALREADY deployed in the audited failed sensor runs; they
@@ -22,6 +27,65 @@ export const FINALIZATION_LIMITS = Object.freeze({
   sensor_stop_seconds: 180, stop_command_ms: 240000,
   settle_ms: 30000, step_minutes: 6, diagnostic_command_ms: 10000,
 });
+export const STOP_EXPERIMENT = 'diagnostic-stop-420-v1';
+// Diagnostic only, NOT a known fix. One new dispatch per pair is an operator
+// limit: a stateless attempt-1 guard cannot prevent a second NEW dispatch.
+const STOP_EXPERIMENT_PAIRS = Object.freeze([
+  {repository: 'garnet-labs/n8n', repository_id: '1206112160', pr_number: 34,
+    baseline_sha: 'f461114870a31dbdf650abcff9a09ad5a86bdafd', pr_base_tip: 'f461114870a31dbdf650abcff9a09ad5a86bdafd',
+    head_sha: '65fca3909cfa5a986ff618b5984e091fb068a0ec', manifests: ['packages/cli/package.json', 'pnpm-lock.yaml']},
+  {repository: 'garnet-labs/supabase', repository_id: '1206332384', pr_number: 143,
+    baseline_sha: 'f28139579a7c017ff90a8414ae1f5929d018d3d2', pr_base_tip: 'f28139579a7c017ff90a8414ae1f5929d018d3d2',
+    head_sha: '0d7c5b981b6ee494709fdf590b6b44e8e0ae5a5a', manifests: ['examples/todo-list/nextjs-todo-list/package-lock.json']},
+  {repository: 'garnet-labs/OpenHands', repository_id: '1337697001', pr_number: 5,
+    baseline_sha: 'c41bda23d6b648bf3a30422ab9d71bd7675caea1', pr_base_tip: 'c41bda23d6b648bf3a30422ab9d71bd7675caea1',
+    head_sha: 'f2689932d9b8a025d0eef961dd9a962c11c5697c', manifests: ['package-lock.json']},
+  {repository: 'garnet-labs/phantom-connect-sdk', repository_id: '1206647047', pr_number: 23,
+    baseline_sha: '8eb39b151cedacddf55fc7715b3469b67743f78e', pr_base_tip: '8eb39b151cedacddf55fc7715b3469b67743f78e',
+    head_sha: '112a60b79f4c7cb7e736bd34a4a78afe809590a1', manifests: ['yarn.lock']},
+  {repository: 'garnet-labs/next.js', repository_id: '1206332346', pr_number: 40,
+    baseline_sha: '2d069943639fd0fc67a26bbb337d8a726f50924d', pr_base_tip: '2d069943639fd0fc67a26bbb337d8a726f50924d',
+    head_sha: 'bcae068be948a03cba54813aea6cffb5c03adf63', manifests: ['package.json', 'pnpm-lock.yaml']},
+]);
+export function finalizationLimits(s) {
+  const requested = s.finalization_experiment ?? 'none';
+  if (requested === 'none') return {...FINALIZATION_LIMITS, experiment: false, job_minutes: 45};
+  assert(requested === STOP_EXPERIMENT, 'Unknown finalization experiment');
+  const permit = STOP_EXPERIMENT_PAIRS.find(p => p.repository === s.repository &&
+    p.repository_id === s.repository_id && p.pr_number === s.pr_number &&
+    p.baseline_sha === s.baseline_sha && p.pr_base_tip === s.pr_base_tip &&
+    p.head_sha === s.head?.sha && s.base?.sha === p.pr_base_tip &&
+    s.head?.repository === p.repository && s.base?.repository === p.repository &&
+    s.head?.repository_id === p.repository_id && s.base?.repository_id === p.repository_id &&
+    JSON.stringify([...s.manifests].sort()) === JSON.stringify(p.manifests));
+  assert(permit && s.event === 'workflow_dispatch' && s.run_attempt === '1',
+    'Stop experiment requires an exact reviewed pair and a new manual attempt-1 dispatch');
+  return {...FINALIZATION_LIMITS, experiment: true, experiment_id: STOP_EXPERIMENT,
+    sensor_stop_seconds: 420, stop_command_ms: 480000, step_minutes: 10, job_minutes: 60};
+}
+export function systemdDurationMs(value) {
+  const text = String(value ?? '').trim(), tokens = [...text.matchAll(/(\d+(?:\.\d+)?)(us|ms|min|s|h|d)/g)];
+  assert(tokens.length && tokens.map(t => t[0]).join('') === text.replace(/\s/g, ''), 'Missing or unbounded systemd stop timeout');
+  const scale = {us: 0.001, ms: 1, s: 1000, min: 60000, h: 3600000, d: 86400000};
+  return tokens.reduce((sum, t) => sum + Number(t[1]) * scale[t[2]], 0);
+}
+export function validateStopExperiment(r, s) {
+  const limits = finalizationLimits(s);
+  if (!limits.experiment) {
+    if (r.sensor.finalization_limits !== undefined)
+      assert(equalData(r.sensor.finalization_limits, limits), 'Unbound stop experiment budget');
+    return;
+  }
+  assert(equalData(r.sensor.finalization_limits, limits), 'Stop experiment receipt budget mismatch');
+  assert(systemdDurationMs(r.sensor.stop_details?.TimeoutStopUSec) === 420000, 'Stop experiment effective systemd timeout mismatch');
+  assert(r.sensor.stop_details.ActiveState === 'inactive' && r.sensor.stop_details.SubState === 'dead' &&
+    r.sensor.stop_details.Result === 'success' && r.sensor.stop_details.ExecMainStatus === '0', 'Stop experiment did not stop cleanly');
+  assert(Number.isFinite(r.sensor.stop_elapsed_ms) && r.sensor.stop_elapsed_ms >= 0 &&
+    r.sensor.stop_elapsed_ms < limits.stop_command_ms &&
+    Number.isFinite(r.sensor.finalization_elapsed_ms) && r.sensor.finalization_elapsed_ms >= 0 &&
+    r.sensor.finalization_elapsed_ms < limits.step_minutes * 60000 &&
+    !r.sensor.finalization_error && !r.finalization_error, 'Stop experiment timing/lifecycle failure');
+}
 export const IMAGE_TAGS = Object.freeze({
   node: 'node:22-bookworm', python: 'python:3.12-bookworm',
   go: 'golang:1.26-bookworm', rust: 'rust:1-bookworm', ruby: 'ruby:3.3-bookworm',
@@ -275,7 +339,8 @@ export function planWorkloads(root, changed, context) {
     let note = '';
     const reviewed = reviewedNodePlan(root, file, kind, context);
     const bun = reviewed ? null : planBunLockfile({root, file, kind, read: readSource});
-    const additional = reviewed ?? bun ?? planAdditionalLockfile({root, file, kind, read: readSource});
+    const python = planReviewedPythonRuntime({root, file, kind, context, read: readSource, blob: gitBlob});
+    const additional = reviewed ?? bun ?? python ?? planAdditionalLockfile({root, file, kind, read: readSource});
     if (additional) {
       dir = additional.directory;
       commands.push(...additional.commands);
@@ -388,7 +453,8 @@ export function planWorkloads(root, changed, context) {
     const key = `${kind}:${dir}:${kind === 'python' && scope === 'requirements-install' ? path.posix.basename(file) : ''}`;
     if (plans.has(key)) plans.get(key).changed_manifests.push(file);
     else plans.set(key, {id: key, ecosystem: kind, directory: dir, commands, scope, locked, note, changed_manifests: [file],
-      ...(reviewed ? {manager_selection: reviewed.manager_selection} : {})});
+      ...(reviewed ? {manager_selection: reviewed.manager_selection} : {}),
+      ...(python ? {python_runtime_policy: python.python_runtime_policy} : {})});
   }
   assert(plans.size > 0 && plans.size <= 12, 'BLOCKED: workload count outside pilot bounds');
   return [...plans.values()].sort((a, b) => a.id.localeCompare(b.id));
@@ -409,9 +475,11 @@ const artifactName = (s, side) => `garnet-record-${s.run_id}-${s.run_attempt}-${
 
 export function validateImages(images, snapshot) {
   for (const kind of new Set(snapshot.manifests.map(ecosystem).filter(Boolean))) {
-    assert(DIGEST.test(images?.[kind]?.digest) && images[kind].tag === reviewedImageTag(snapshot, kind, IMAGE_TAGS[kind]),
+    const selectedTag = reviewedPythonRuntimeImage(snapshot, kind)?.tag ?? reviewedImageTag(snapshot, kind, IMAGE_TAGS[kind]);
+    validateReviewedPythonImage(snapshot, kind, images?.[kind]);
+    assert(DIGEST.test(images?.[kind]?.digest) && images[kind].tag === selectedTag,
       'Missing or invalid immutable image');
-    const repository = reviewedImageTag(snapshot, kind, IMAGE_TAGS[kind]).split(':')[0];
+    const repository = selectedTag.split(':')[0];
     assert(images[kind].digest.startsWith(`${repository}@`) ||
       images[kind].digest.startsWith(`docker.io/library/${repository}@`), 'Image repository mismatch');
   }
@@ -420,11 +488,14 @@ export function validateImages(images, snapshot) {
 
 async function resolveImages() {
   const s = validateSnapshot(envJSON('RECORDER_SNAPSHOT'));
+  const limits = finalizationLimits(s); // reject mismatched opt-in BEFORE image pull
   const images = {};
   for (const kind of new Set(s.manifests.map(ecosystem).filter(Boolean))) {
-    const tag = reviewedImageTag(s, kind, IMAGE_TAGS[kind]);
-    run('docker', ['pull', '--platform', 'linux/amd64', tag], {timeout: 600000});
-    const digests = JSON.parse(run('docker', ['image', 'inspect', tag, '--format', '{{json .RepoDigests}}']));
+    const reviewedPython = reviewedPythonRuntimeImage(s, kind);
+    const tag = reviewedPython?.tag ?? reviewedImageTag(s, kind, IMAGE_TAGS[kind]);
+    const reference = reviewedPython?.digest ?? tag;
+    run('docker', ['pull', '--platform', 'linux/amd64', reference], {timeout: 600000});
+    const digests = JSON.parse(run('docker', ['image', 'inspect', reference, '--format', '{{json .RepoDigests}}']));
     assert(Array.isArray(digests), 'Image digest missing');
     const image = digests.find(d => d.startsWith(`${tag.split(':')[0]}@`));
     assert(DIGEST.test(image), 'Image did not resolve to a digest');
@@ -432,6 +503,7 @@ async function resolveImages() {
   }
   validateImages(images, s);
   fs.appendFileSync(process.env.GITHUB_OUTPUT, `images=${JSON.stringify(images)}\n`);
+  fs.appendFileSync(process.env.GITHUB_OUTPUT, `stop_budget=${JSON.stringify(limits)}\n`);
 }
 
 function locations() {
@@ -441,6 +513,7 @@ function locations() {
 }
 function initialize() {
   const s = validateSnapshot(envJSON('RECORDER_SNAPSHOT'));
+  finalizationLimits(s);
   const side = process.env.RECORDER_SIDE;
   assert(['base', 'head'].includes(side), 'Invalid matrix side');
   const p = locations();
@@ -556,17 +629,34 @@ async function prepare() {
   const actual = run('git', ['-C', source, 'rev-parse', 'HEAD']);
   assert(actual === r.expected_sha, 'Checkout does not match expected immutable SHA');
   const tree = run('git', ['-C', source, 'ls-tree', '-rz', 'HEAD']);
-  assert(!tree.split('\0').some(line => line.startsWith('160000 ')), 'BLOCKED: submodules require explicit policy');
+  const context = {snapshot: s, executed_sha: actual};
+  const go = expectedGoMaterialization(context);
+  if (go) {
+    const inventory = parseGoGitTree(tree);
+    validateStaticInventory(context, inventory);
+    auditMaterialization(source, inventory, {allowRootGitMetadata: true});
+    state.goInventory = inventory;
+  } else {
+    assert(!tree.split('\0').some(line => line.startsWith('160000 ')), 'BLOCKED: submodules require explicit policy');
+  }
   r.executed_sha = actual;
   Object.assign(r, recorderCodeHashes());
   r.images = validateImages(envJSON('RECORDER_IMAGES'), s);
   // Validate the entire copy before the sensor can expose host credentials.
   state.sourceCopy = path.join(locations().state, 'source');
-  const context = {snapshot: s, executed_sha: actual};
   const fidelity = copyExactSource(source, state.sourceCopy, context);
   if (fidelity) r.source_copy_fidelity = fidelity;
+  if (go) r.source_materialization = auditPreparedGoCopy(context, state.sourceCopy, state.goInventory);
   saveState(state);
-  r.workloads = planWorkloads(state.sourceCopy, s.manifests, context).map(plan => ({
+  let plans;
+  if (go) {
+    const {source_materialization: expected, ...plan} = expectedGoPlan(context);
+    // Workload-level materialization is attached only AFTER its actual private
+    // copy passes the same audit in executeContainer, never from expected shape.
+    assert(equalData(expected, r.source_materialization), 'Go source materialization mismatch');
+    plans = [plan];
+  } else plans = planWorkloads(state.sourceCopy, s.manifests, context);
+  r.workloads = plans.map(plan => ({
     ...plan, image: r.images[plan.ecosystem], exit_code: null, pids: [], started_at: null,
     finished_at: null, marker: null,
   }));
@@ -651,6 +741,13 @@ async function executeContainer(state, workload, index) {
     {snapshot: state.receipt.snapshot, executed_sha: state.receipt.executed_sha});
   assert(equalData(fidelity, state.receipt.source_copy_fidelity), 'Per-workload source copy fidelity mismatch');
   if (fidelity) workload.source_copy_fidelity = fidelity;
+  if (state.receipt.source_materialization) {
+    const materialization = auditPreparedGoCopy(
+      {snapshot: state.receipt.snapshot, executed_sha: state.receipt.executed_sha},
+      copy, state.goInventory);
+    assert(equalData(materialization, state.receipt.source_materialization), 'Go per-workload copy mismatch');
+    workload.source_materialization = materialization;
+  }
   assertWorkloadDirectory(copy, workload.directory);
   // chown never follows source symlinks. The container gets only this copy.
   sudo('chown', '-hR', '10001:10001', copy);
@@ -830,30 +927,55 @@ async function finalize() {
   let state;
   try { state = loadState(); } catch { initialize(); state = loadState(); }
   const r = state.receipt;
+  const limits = finalizationLimits(r.snapshot), finalizationStart = performance.now();
+  const deadline = finalizationStart + limits.step_minutes * 60000 - 5000;
+  const finalRun = (command, args, requested = limits.diagnostic_command_ms) => {
+    const remaining = Math.floor(deadline - performance.now());
+    assert(remaining > 0, 'Finalization diagnostic/export budget exhausted');
+    return run(command, args, {timeout: Math.min(requested, remaining)});
+  };
+  const finalSudo = (...args) => finalRun('sudo', ['--', ...args]);
+  const unitState = () => Object.fromEntries(finalSudo('systemctl', 'show', 'jibril.service',
+    '--property=ActiveState,SubState,Result,ExecMainCode,ExecMainStatus,TimeoutStopUSec,CPUUsageNSec,MemoryCurrent,TasksCurrent'
+  ).split('\n').map(line => line.split('=')));
+  r.recording_complete = false;
+  r.sensor.stopped_cleanly = false;
+  r.sensor.finalization_started_at = now();
+  r.sensor.finalization_limits = limits;
+  saveState(state);
   let failure = false;
   // Stop any lingering workload first. Cancellation/error is never a success.
   for (const name of state.containers) {
     try {
-      const status = JSON.parse(run('docker', ['inspect', name]))[0].State;
-      if (status.Running) { run('docker', ['stop', '--time', '10', name]); failure = true; }
+      const status = JSON.parse(finalRun('docker', ['inspect', name]))[0].State;
+      if (status.Running) { finalRun('docker', ['stop', '--time', '10', name], 15000); failure = true; }
     } catch { failure = true; }
   }
   try {
     assert(r.sensor.ready, 'Sensor never became ready');
-    assert(sudo('systemctl', 'is-active', 'jibril.service') === 'active', 'Sensor ended before finalization');
+    r.sensor.pre_stop_details = unitState();
+    saveState(state);
+    assert(r.sensor.pre_stop_details.ActiveState === 'active', 'Sensor ended before finalization');
+    assert(systemdDurationMs(r.sensor.pre_stop_details.TimeoutStopUSec) === limits.sensor_stop_seconds * 1000,
+      'Effective systemd timeout does not match the selected bounded budget');
     // Leave >=30 seconds after the workload for short recordings to settle.
-    await sleep(FINALIZATION_LIMITS.settle_ms);
+    await sleep(limits.settle_ms);
     r.sensor.settle_seconds = 30;
-    r.sensor.stop_command_timeout_ms = FINALIZATION_LIMITS.stop_command_ms;
+    assert(deadline - performance.now() >= limits.stop_command_ms + limits.diagnostic_command_ms,
+      'Insufficient remaining finalization budget for the full stop and state query');
+    r.sensor.stop_command_timeout_ms = limits.stop_command_ms;
+    r.sensor.stop_started_at = now();
+    saveState(state);
+    const stopStart = performance.now();
     try {
-      run('sudo', ['--', 'systemctl', 'stop', 'jibril.service'],
-        {timeout: FINALIZATION_LIMITS.stop_command_ms});
+      finalRun('sudo', ['--', 'systemctl', 'stop', 'jibril.service'], limits.stop_command_ms);
     } finally {
       // Even a stop subprocess error must not discard available unit state.
-      const status = run('sudo', ['--', 'systemctl', 'show', 'jibril.service',
-        '--property=ActiveState,SubState,Result,ExecMainCode,ExecMainStatus,TimeoutStopUSec'],
-      {timeout: FINALIZATION_LIMITS.diagnostic_command_ms});
-      r.sensor.stop_details = Object.fromEntries(status.split('\n').map(line => line.split('=')));
+      r.sensor.stop_elapsed_ms = Math.round(performance.now() - stopStart);
+      r.sensor.stop_finished_at = now();
+      saveState(state);
+      r.sensor.stop_details = unitState();
+      saveState(state);
     }
     const fields = r.sensor.stop_details;
     assert(fields.ActiveState === 'inactive' && fields.SubState === 'dead' &&
@@ -868,11 +990,11 @@ async function finalize() {
   // failure above remains sticky: even a valid partial profile cannot give GO.
   try {
     const profile = '/var/log/jibril.profile.json';
-    sudo('test', '-f', profile);
-    sudo('test', '!', '-L', profile);
-    sudo('test', '-s', profile);
-    sudo('cp', '--no-dereference', profile, path.join(p.output, 'jibril.profile.json'));
-    sudo('chown', `${process.getuid()}:${process.getgid()}`, path.join(p.output, 'jibril.profile.json'));
+    finalSudo('test', '-f', profile);
+    finalSudo('test', '!', '-L', profile);
+    finalSudo('test', '-s', profile);
+    finalSudo('cp', '--no-dereference', profile, path.join(p.output, 'jibril.profile.json'));
+    finalSudo('chown', `${process.getuid()}:${process.getgid()}`, path.join(p.output, 'jibril.profile.json'));
     const raw = readBounded(path.join(p.output, 'jibril.profile.json'));
     r.profile = retainedProfile(raw, r);
     assert(r.profile.state === 'valid', 'Raw profile did not satisfy strict workload evidence');
@@ -880,6 +1002,8 @@ async function finalize() {
     failure = true;
     r.profile.state = fs.existsSync(path.join(p.output, 'jibril.profile.json')) ? 'invalid' : 'missing';
   }
+  r.sensor.finalization_elapsed_ms = Math.round(performance.now() - finalizationStart);
+  if (r.sensor.finalization_elapsed_ms >= limits.step_minutes * 60000) failure = true;
   if (failure) r.finalization_error = 'Missing/invalid profile, no package-tool workload evidence, or unclean sensor lifecycle; review retained raw bytes and trusted stop details';
   Object.assign(r, recordingOutcome(r, failure));
   r.finalized_at = now();
@@ -942,11 +1066,14 @@ export function validateReceipt(r, s, side, images, codeHashes = recorderCodeHas
     r.workload_exit === 0 && r.status === 'recorded', 'Recording is incomplete or workload failed');
   assert(r.sensor?.ready === true && r.sensor.stopped_cleanly === true &&
     r.sensor.settle_seconds >= 30, 'Incomplete sensor lifecycle');
+  validateStopExperiment(r, s);
   assert(r.isolation?.network?.docker_user_enforced === true &&
     r.isolation.network.host_input_blocked === true, 'Missing network containment evidence');
   assert(Array.isArray(r.workloads) && r.workloads.length > 0 && r.workloads.length <= 12,
     'No workload evidence');
   validateReviewedExceptions(r, s);
+  validateReviewedPythonRuntimeWorkloads(r, s, images);
+  validateGoReceipt(r, s, REVIEWED_EXCEPTIONS_VERSION);
   for (const w of r.workloads) {
     assert(w.exit_code === 0 && w.oom_killed === false && w.output_truncated === false &&
       w.timed_out === false, 'Workload exit failure');
@@ -996,6 +1123,9 @@ async function verify() {
       summary.sides.push({side, executed_sha: r.executed_sha, profile_sha256: checked.sha256,
         recorder_script_sha256: r.recorder_script_sha256, recorder_helpers_sha256: r.recorder_helpers_sha256,
         reviewed_exception_validation: validateReviewedExceptions(r, s),
+        reviewed_python_runtime_validation: validateReviewedPythonRuntimeWorkloads(r, s, images),
+        ...(r.source_materialization ? {source_materialization: r.source_materialization,
+          go_submodule_validation: validateGoReceipt(r, s, REVIEWED_EXCEPTIONS_VERSION)} : {}),
         ...(r.source_copy_fidelity ? {source_copy_fidelity: r.source_copy_fidelity} : {}),
         profile_job: r.profile_job, workloads: r.workloads, evidence: checked.workload_evidence,
         package_tool_evidence: checked.package_tool_evidence});
